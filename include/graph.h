@@ -6,12 +6,14 @@
 #include <unordered_set>
 #include <vector>
 
+namespace mini_graph {
 using Task = std::function<void()>;
 enum class GraphLogLevel { DEBUG, INFO, WARN, ERROR, NO_LOG };
 typedef void (*GraphLogHandler)(
         GraphLogLevel level, const char* file, const char* func, int line,
         const char* fmt, va_list ap);
 
+namespace {
 class Node {
 public:
     /*
@@ -19,8 +21,7 @@ public:
      * @param id: Node id
      * @param task: Task to be executed
      */
-    Node(const std::string& id, Task task)
-            : m_id(id), m_task(task), m_is_executed(false) {}
+    Node(const std::string& id, Task task) : m_id(id), m_task(task) {}
 
     /*
      * Get node id
@@ -50,20 +51,78 @@ public:
      * Check if the node is executed
      * @return True if the node is executed, false otherwise
      */
-    bool is_executed() const { return m_is_executed; }
+    bool is_executed() const { return m_status == Status::FINISHED; }
+
+    enum class Status { WAITING, RUNNING, FINISHED };
+    /*
+     * set status
+     * @param s: status
+     */
+    void status(Status s) { m_status = s; }
+    Status status() const { return m_status; }
+    std::string status_str() const {
+        switch (m_status) {
+            case Status::WAITING:
+                return "WAITING";
+            case Status::RUNNING:
+                return "RUNNING";
+            case Status::FINISHED:
+                return "FINISHED";
+            default:
+                __builtin_trap();
+                return "UNKNOWN";
+        }
+    }
 
     /*
-     * unmark/Mark the node as executed
+     * set duration
+     * @param d: duration
      */
-    void mark_executed() { m_is_executed = true; }
-    void unmark_executed() { m_is_executed = false; }
+    void duration(double d) { m_duration = d; }
+    double duration() const { return m_duration; }
+
+    /*
+     * set start time
+     * @param t: start time
+     */
+    void start_time(double t) { m_start_time = t; }
+    double start_time() const { return m_start_time; }
+
+    /*
+     * restore the node status
+     */
+    void restore() {
+        m_status = Status::WAITING;
+        m_duration = 0.0;
+        m_start_time = 0.0;
+    }
 
 private:
     std::string m_id;
     Task m_task;
     std::vector<Node*> m_dependencies;
-    bool m_is_executed;
+    double m_duration = 0.0;
+    double m_start_time = 0.0;
+    Status m_status = Status::WAITING;
 };
+
+class Gtimer {
+    using clock = ::std::chrono::high_resolution_clock;
+    clock::time_point m_start;
+
+public:
+    Gtimer();
+
+    void reset();
+
+    [[nodiscard]] double get_secs() const;
+    [[nodiscard]] double get_msecs() const;
+
+    double get_secs_reset();
+    double get_msecs_reset();
+};
+
+}  // namespace
 
 class Graph {
 public:
@@ -94,6 +153,14 @@ public:
     void dependency(
             const std::string& fromId, const std::initializer_list<std::string>& toIds);
     void dependency(const std::string& fromId, const std::string& toIds);
+    void virtual_dependency(
+            const std::string& fromId,
+            const std::initializer_list<std::string>& toIds) {
+        dependency(fromId, toIds);
+    };
+    void virtual_dependency(const std::string& fromId, const std::string& toIds) {
+        dependency(fromId, toIds);
+    };
 
     /*
      * Check if the graph is a valid, eg is dag etc.
@@ -147,15 +214,20 @@ private:
     bool m_is_freezed = false;
 
     /*
+     * Gtimer for the graph
+     */
+    Gtimer m_timer;
+
+    /*
      * Check if the graph is cyclic
      * @param node: Node to be checked
      * @param visited: Set of visited nodes
-     * @param recStack: Set of nodes in the recursion stack
+     * @param rec_stack: Set of nodes in the recursion stack
      * @return True if the graph is cyclic, false otherwise
      */
     bool is_cyclic(
             Node* node, std::unordered_set<Node*>& visited,
-            std::unordered_set<Node*>& recStack);
+            std::unordered_set<Node*>& rec_stack);
 
     /*
      * Check if the graph is connected
@@ -173,6 +245,12 @@ private:
      * Execute the tasks in the graph
      */
     void execution_status();
+
+    /*
+     * dump the node status of graph
+     */
+
+    void dump_node_status();
 };
 
 /************* helper ************/
@@ -207,3 +285,4 @@ private:
     graph_log_error(msg); \
     graph_trap();
 #endif
+}  // namespace mini_graph

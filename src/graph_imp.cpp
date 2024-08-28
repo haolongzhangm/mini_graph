@@ -7,6 +7,35 @@
 
 #include "graph.h"
 
+using namespace mini_graph;
+
+double Gtimer::get_secs() const {
+    auto now = std::chrono::high_resolution_clock::now();
+    return ::std::chrono::duration_cast<::std::chrono::nanoseconds>(now - m_start)
+                   .count() *
+           1e-9;
+}
+double Gtimer::get_msecs() const {
+    auto now = std::chrono::high_resolution_clock::now();
+    return ::std::chrono::duration_cast<::std::chrono::nanoseconds>(now - m_start)
+                   .count() *
+           1e-6;
+}
+double Gtimer::get_secs_reset() {
+    auto ret = get_secs();
+    reset();
+    return ret;
+}
+double Gtimer::get_msecs_reset() {
+    return get_secs_reset() * 1e3;
+}
+void Gtimer::reset() {
+    m_start = clock::now();
+}
+Gtimer::Gtimer() {
+    reset();
+}
+
 Graph::Graph(size_t thread_worker_num) : m_thread_worker_num(thread_worker_num) {
     graph_assert(
             thread_worker_num > 0, "thread worker number should be greater than 0");
@@ -44,14 +73,13 @@ void Graph::dependency(const std::string& fromId, const std::string& toId) {
     graph_assert(!m_is_freezed, "Graph is freezed, cannot add more dependencies!");
     Node* from = m_nodes.at(fromId);
     Node* to = m_nodes.at(toId);
-    //! check double add same dependency
     for (const auto& dep : from->dependencies()) {
         graph_assert(
                 dep != to, "Node %s already depends on %s", from->id().c_str(),
                 to->id().c_str());
     }
     from->dependency(to);
-    m_dependency_count[from]++;  // Increment dependency count for the dependent node
+    m_dependency_count[from]++;
 }
 
 Graph::~Graph() {
@@ -62,14 +90,32 @@ Graph::~Graph() {
 
 bool Graph::valid() {
     std::unordered_set<Node*> visited;
-    std::unordered_set<Node*> recStack;
+    std::unordered_set<Node*> rec_stack;
     auto ret = true;
 
     for (const auto& pair : m_nodes) {
-        if (is_cyclic(pair.second, visited, recStack)) {
+        if (is_cyclic(pair.second, visited, rec_stack)) {
             graph_log_error(
-                    "Graph is invalid: cycle detected at: %s",
+                    "Graph is invalid: cycle detected at: %s details:",
                     pair.second->id().c_str());
+            Node* node = pair.second;
+            std::string dependencies_str;
+            while (rec_stack.size() > 0) {
+                dependencies_str.clear();
+                for (const auto& dep : node->dependencies()) {
+                    dependencies_str += dep->id() + ",";
+                }
+                graph_log_error(
+                        "Node %s depends %s", node->id().c_str(),
+                        dependencies_str.c_str());
+                rec_stack.erase(node);
+                for (Node* neighbor : node->dependencies()) {
+                    if (rec_stack.find(neighbor) != rec_stack.end()) {
+                        node = neighbor;
+                        break;
+                    }
+                }
+            }
             ret = false;
         }
     }
@@ -83,10 +129,14 @@ bool Graph::valid() {
 
 void Graph::freezed() {
     std::lock_guard<std::mutex> lock(mtx);
-    graph_assert(valid(), "Graph is not a invalid!");
+    graph_assert(valid(), "Graph is invalid!");
     graph_assert(!m_is_freezed, "Graph is already freezed!");
     graph_assert(m_nodes.size() > 0, "No nodes in the graph!");
     m_is_freezed = true;
+
+    graph_log_info(
+            "User Build Graph use time %.3f ms with %zu nodes",
+            m_timer.get_msecs_reset(), m_nodes.size());
 }
 
 void Graph::execute() {
@@ -122,10 +172,10 @@ void Graph::execute() {
             if (!pair.second->dependencies().empty()) {
                 std::string dependencies_str;
                 for (const auto& dep : pair.second->dependencies()) {
-                    dependencies_str += dep->id() + ", ";
+                    dependencies_str += dep->id() + ",";
                 }
                 graph_log_debug(
-                        "Node %s, it`s depends: %s", pair.second->id().c_str(),
+                        "Node \"%s\" depends: \"%s\"", pair.second->id().c_str(),
                         dependencies_str.c_str());
             }
         }
@@ -147,10 +197,14 @@ void Graph::execute() {
             }
             if (node) {
                 //! real work execute the task
+                Gtimer t;
                 graph_log_debug("Executing %s", node->id().c_str());
+                node->status(Node::Status::RUNNING);
+                node->start_time(m_timer.get_msecs());
                 node->task()();
                 graph_log_debug("Executed %s", node->id().c_str());
-                node->mark_executed();
+                node->status(Node::Status::FINISHED);
+                node->duration(t.get_msecs());
                 {
                     std::lock_guard<std::mutex> lock(mtx);
                     for (const auto& pair : m_nodes) {
@@ -188,31 +242,35 @@ void Graph::execute() {
 
     execution_status();
 
-    //! restore the dependency count and unmark_executed
+    //! restore the dependency count and restore the executed status
     for (const auto& pair : restore_dependency_count) {
         m_dependency_count[pair.first] = pair.second;
-        pair.first->unmark_executed();
+        pair.first->restore();
     }
+
+    graph_log_info("Execution completed in %.3f ms", m_timer.get_msecs());
+    //! reset the timer for loop execute
+    m_timer.reset();
 }
 
 bool Graph::is_cyclic(
         Node* node, std::unordered_set<Node*>& visited,
-        std::unordered_set<Node*>& recStack) {
-    if (recStack.count(node))
+        std::unordered_set<Node*>& rec_stack) {
+    if (rec_stack.count(node))
         return true;
     if (visited.count(node))
         return false;
 
     visited.insert(node);
-    recStack.insert(node);
+    rec_stack.insert(node);
 
     for (Node* neighbor : node->dependencies()) {
-        if (is_cyclic(neighbor, visited, recStack)) {
+        if (is_cyclic(neighbor, visited, rec_stack)) {
             return true;
         }
     }
 
-    recStack.erase(node);
+    rec_stack.erase(node);
     return false;
 }
 bool Graph::is_connected() {
@@ -289,6 +347,22 @@ void Graph::execution_status() {
             }
         }
         graph_throw("Execution failed");
+    }
+
+    dump_node_status();
+}
+
+void Graph::dump_node_status() {
+    //! only dump node status when debug
+    if (log_level() == GraphLogLevel::DEBUG) {
+        graph_log_debug("Node status:");
+        for (const auto& pair : m_nodes) {
+            Node* node = pair.second;
+            graph_log_debug(
+                    "Node \"%s\" status: %s, duration: %.3f ms, wait sched: %.3f ms",
+                    node->id().c_str(), node->status_str().c_str(), node->duration(),
+                    node->start_time());
+        }
     }
 }
 

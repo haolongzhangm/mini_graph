@@ -2,6 +2,8 @@
 #include <thread>
 #include "graph.h"
 
+using namespace mini_graph;
+
 TEST(Graph, init) {
     Graph g;
 }
@@ -191,6 +193,43 @@ TEST(Graph, add_dependency_cycle_3) {
     g.dependency("A", "B");
 
     ASSERT_THROW(g.dependency("A", "B"), std::runtime_error);
+}
+
+TEST(Graph, add_dependency_cycle_4) {
+    Graph g;
+    g.add_task("A", []() { std::cout << "Executing A" << std::endl; });
+    g.add_task("B", []() { std::cout << "Executing B" << std::endl; });
+    g.add_task("C", []() { std::cout << "Executing C" << std::endl; });
+    g.add_task("D", []() { std::cout << "Executing D" << std::endl; });
+    g.dependency("A", "B");
+    g.dependency("B", {"C", "D"});
+    g.dependency("C", "A");
+    g.dependency("D", "A");
+
+    ASSERT_THROW(g.freezed(), std::runtime_error);
+}
+
+TEST(Graph, connected) {
+    Graph g;
+    g.add_task("A", []() { std::cout << "Executing A" << std::endl; });
+    g.add_task("B", []() { std::cout << "Executing B" << std::endl; });
+    g.add_task("C", []() { std::cout << "Executing C" << std::endl; });
+    g.add_task("D", []() { std::cout << "Executing D" << std::endl; });
+    g.add_task("E", []() { std::cout << "Executing E" << std::endl; });
+
+    g.dependency("A", {"B", "C"});  // A depends on B and C
+    g.dependency("B", {"D"});       // B depends on D
+    g.dependency("C", {"D"});       // C depends on D
+    g.dependency("A", {"E"});       // A depends on E
+
+    ASSERT_TRUE(g.valid());
+
+    Graph g2;
+    g2.add_task("A", []() { std::cout << "Executing A" << std::endl; });
+    g2.add_task("B", []() { std::cout << "Executing B" << std::endl; });
+
+    ASSERT_FALSE(g2.valid());
+    ASSERT_THROW(g2.freezed(), std::runtime_error);
 }
 
 TEST(Graph, execute) {
@@ -496,7 +535,7 @@ TEST(Graph, five_stage_pipeline) {
         data[i] = i;
     }
 
-    //! define four post processing to handle *, -, /, + operation
+    //! define four post processing to handle + -> / -> - , * operation
     auto stage_m = [&data, &result](size_t offset, size_t total) {
         for (size_t i = 0; i < total; i++) {
             result[offset + i] = result[offset + i] * 6.0;
@@ -562,13 +601,13 @@ TEST(Graph, five_stage_pipeline) {
 
     //! define a virtual node to trigger the pipeline
     g.add_task("end", []() { printf("five_stage_pipeline end\n"); });
-    g.dependency("end", {"M0", "M1", "M2", "M3", "M4"});
+    g.virtual_dependency("end", {"M0", "M1", "M2", "M3", "M4"});
 
     //! simulation nn with single thread by add dependency
-    g.dependency("A0", {"A1"});
-    g.dependency("A1", {"A2"});
-    g.dependency("A2", {"A3"});
-    g.dependency("A3", {"A4"});
+    g.virtual_dependency("A0", {"A1"});
+    g.virtual_dependency("A1", {"A2"});
+    g.virtual_dependency("A2", {"A3"});
+    g.virtual_dependency("A3", {"A4"});
 
     g.freezed();
     g.execute();

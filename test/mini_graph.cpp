@@ -549,6 +549,8 @@ TEST(Graph, five_stage_pipeline) {
     };
 
     auto stage_d = [&data, &result](size_t offset, size_t total) {
+        //! sleep 101ms
+        std::this_thread::sleep_for(std::chrono::milliseconds(101));
         for (size_t i = 0; i < total; i++) {
             result[offset + i] = result[offset + i] / 4.0;
         }

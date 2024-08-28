@@ -1,6 +1,6 @@
 # mini_graph
 
-this is a simple graph imp, which define a task depends, task run, task.
+this is a simple graph imp, which define a task depends, task run, and etc.
 
 ## how to build
 if cross build or host build changed, please add --remove_old_build to remove old build.

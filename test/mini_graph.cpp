@@ -482,6 +482,104 @@ TEST(Graph, two_graph) {
     ASSERT_EQ(c, 2);
 }
 
+TEST(Graph, five_stage_pipeline) {
+    //! we define five function to simulate a five stage pipeline to process data
+    //! the data will be processed by each stage in order
+    //! every stage cal 1024 elements, total 1024 * 5 elements
+
+    std::vector<float> data(1024 * 5, 0);
+    std::vector<float> result(1024 * 5, 0);
+    std::vector<float> expected(1024 * 5, 0);
+
+    //! init data
+    for (size_t i = 0; i < 1024 * 5; i++) {
+        data[i] = i;
+    }
+
+    //! define four post processing to handle *, -, /, + operation
+    auto stage_m = [&data, &result](size_t offset, size_t total) {
+        for (size_t i = 0; i < total; i++) {
+            result[offset + i] = result[offset + i] * 6.0;
+        }
+    };
+
+    auto stage_s = [&data, &result](size_t offset, size_t total) {
+        for (size_t i = 0; i < total; i++) {
+            result[offset + i] = result[offset + i] - 5.0;
+        }
+    };
+
+    auto stage_d = [&data, &result](size_t offset, size_t total) {
+        for (size_t i = 0; i < total; i++) {
+            result[offset + i] = result[offset + i] / 4.0;
+        }
+    };
+
+    auto stage_a = [&data, &result](size_t offset, size_t total) {
+        for (size_t i = 0; i < total; i++) {
+            result[offset + i] = data[offset + i] + 3.0;
+        }
+    };
+
+    //! cal naive result
+    for (size_t i = 0; i < 1024 * 5; i++) {
+        expected[i] = (((data[i] + 3.0) / 4.0) - 5.0) * 6.0;
+    }
+
+    Graph g(8);
+    g.add_task("M0", [&]() { stage_m(0, 1024); });
+    g.add_task("M1", [&]() { stage_m(1024, 1024); });
+    g.add_task("M2", [&]() { stage_m(1024 * 2, 1024); });
+    g.add_task("M3", [&]() { stage_m(1024 * 3, 1024); });
+    g.add_task("M4", [&]() { stage_m(1024 * 4, 1024); });
+    g.add_task("S0", [&]() { stage_s(0, 1024); });
+    g.add_task("S1", [&]() { stage_s(1024, 1024); });
+    g.add_task("S2", [&]() { stage_s(1024 * 2, 1024); });
+    g.add_task("S3", [&]() { stage_s(1024 * 3, 1024); });
+    g.add_task("S4", [&]() { stage_s(1024 * 4, 1024); });
+    g.add_task("D0", [&]() { stage_d(0, 1024); });
+    g.add_task("D1", [&]() { stage_d(1024, 1024); });
+    g.add_task("D2", [&]() { stage_d(1024 * 2, 1024); });
+    g.add_task("D3", [&]() { stage_d(1024 * 3, 1024); });
+    g.add_task("D4", [&]() { stage_d(1024 * 4, 1024); });
+    g.add_task("A0", [&]() { stage_a(0, 1024); });
+    g.add_task("A1", [&]() { stage_a(1024, 1024); });
+    g.add_task("A2", [&]() { stage_a(1024 * 2, 1024); });
+    g.add_task("A3", [&]() { stage_a(1024 * 3, 1024); });
+    g.add_task("A4", [&]() { stage_a(1024 * 4, 1024); });
+
+    //! define dependency
+#define DEPENDENCY(stage)                   \
+    g.dependency("M" #stage, {"S" #stage}); \
+    g.dependency("S" #stage, {"D" #stage}); \
+    g.dependency("D" #stage, {"A" #stage});
+
+    DEPENDENCY(0);
+    DEPENDENCY(1);
+    DEPENDENCY(2);
+    DEPENDENCY(3);
+    DEPENDENCY(4);
+
+    //! define a virtual node to trigger the pipeline
+    g.add_task("end", []() { printf("five_stage_pipeline end\n"); });
+    g.dependency("end", {"M0", "M1", "M2", "M3", "M4"});
+
+    //! simulation nn with single thread by add dependency
+    g.dependency("A0", {"A1"});
+    g.dependency("A1", {"A2"});
+    g.dependency("A2", {"A3"});
+    g.dependency("A3", {"A4"});
+
+    g.freezed();
+    g.execute();
+
+    for (size_t i = 0; i < 1024 * 5; i++) {
+        // printf("result[%zu]: %f, expected[%zu]: %f\n", i, result[i], i, expected[i]);
+        //! assert with 1e-6
+        ASSERT_NEAR(result[i], expected[i], 1e-6);
+    }
+}
+
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -115,17 +115,19 @@ void Graph::execute() {
     graph_assert(!execution_queue.empty(), "No nodes to execute!");
 
     graph_log_info("Starting execution");
-    //! show all nodes in the graph
-    graph_log_debug("Nodes in the graph:");
-    for (const auto& pair : m_nodes) {
-        if (!pair.second->dependencies().empty()) {
-            std::string dependencies_str;
-            for (const auto& dep : pair.second->dependencies()) {
-                dependencies_str += dep->id() + ", ";
+    //! show all nodes in the graph when debug
+    if (log_level() == GraphLogLevel::DEBUG) {
+        graph_log_debug("Nodes in the graph:");
+        for (const auto& pair : m_nodes) {
+            if (!pair.second->dependencies().empty()) {
+                std::string dependencies_str;
+                for (const auto& dep : pair.second->dependencies()) {
+                    dependencies_str += dep->id() + ", ";
+                }
+                graph_log_debug(
+                        "Node %s, it`s depends: %s", pair.second->id().c_str(),
+                        dependencies_str.c_str());
             }
-            graph_log_debug(
-                    "Node %s, it`s depends: %s", pair.second->id().c_str(),
-                    dependencies_str.c_str());
         }
     }
 
@@ -401,4 +403,8 @@ GraphLogHandler Graph::config_logger(GraphLogHandler handler) {
 
 void Graph::config_log_level(GraphLogLevel level) {
     g_log_level = level;
+}
+
+GraphLogLevel Graph::log_level() {
+    return g_log_level;
 }

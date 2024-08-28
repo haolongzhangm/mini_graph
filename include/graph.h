@@ -129,6 +129,7 @@ public:
             const char* fmt, ...);
     static GraphLogHandler config_logger(GraphLogHandler handler);
     static void config_log_level(GraphLogLevel level);
+    static GraphLogLevel log_level();
 
 private:
     /* graph all nodes */

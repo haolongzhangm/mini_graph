@@ -134,40 +134,13 @@ void Graph::freezed() {
     graph_assert(m_nodes.size() > 0, "No nodes in the graph!");
     m_is_freezed = true;
 
-    graph_log_info(
-            "User Build Graph use time %.3f ms with %zu nodes",
-            m_timer.get_msecs_reset(), m_nodes.size());
-}
+    prepare_exe();
 
-void Graph::execute() {
-    graph_assert(m_is_freezed, "Graph is not freezed! please call freezed() first!");
-
-    std::condition_variable cv;
-    std::queue<Node*> execution_queue;
-    bool finished = false;
-    //! copy the dependency count to support multi-execute
-    //! because the dependency count will be changed during the execution
-    std::unordered_map<Node*, size_t> restore_dependency_count;
-    for (const auto& pair : m_dependency_count) {
-        restore_dependency_count[pair.first] = pair.second;
-    }
-
-    // Initialize execution_queue with nodes that have no dependencies
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        for (const auto& pair : m_nodes) {
-            if (m_dependency_count[pair.second] == 0) {
-                execution_queue.push(pair.second);
-                graph_log_debug("Pushing %s to queue", pair.second->id().c_str());
-            }
-        }
-    }
-    graph_assert(!execution_queue.empty(), "No nodes to execute!");
-
-    graph_log_info("Starting execution");
     //! show all nodes in the graph when debug
     if (log_level() == GraphLogLevel::DEBUG) {
-        graph_log_debug("Nodes in the graph:");
+        graph_log_debug(
+                "++++++++++++++++++++++++++++Nodes in the "
+                "graph:+++++++++++++++++++++++++++++");
         for (const auto& pair : m_nodes) {
             if (!pair.second->dependencies().empty()) {
                 std::string dependencies_str;
@@ -179,7 +152,44 @@ void Graph::execute() {
                         dependencies_str.c_str());
             }
         }
+        graph_log_debug(
+                "++++++++++++++++++++++++++++Nodes in the "
+                "graph:+++++++++++++++++++++++++++++\n");
     }
+
+    graph_log_info(
+            "User Build Graph use time %.3f ms with %zu nodes",
+            m_timer.get_msecs_reset(), m_nodes.size());
+}
+
+void Graph::prepare_exe() {
+    // Initialize execution_queue with nodes that have no dependencies
+    for (const auto& pair : m_nodes) {
+        if (m_dependency_count[pair.second] == 0) {
+            m_execution_queue.push(pair.second);
+            graph_log_info("Pushing \"%s\" to start queue", pair.second->id().c_str());
+        }
+    }
+}
+
+void Graph::execute() {
+    restore();
+    graph_assert(m_is_freezed, "Graph is not freezed! please call freezed() first!");
+
+    std::condition_variable cv;
+    std::queue<Node*> execution_queue;
+    std::unordered_map<Node*, size_t> dependency_count;
+    bool finished = false;
+
+    //! copy the execution queue caused by loop execute
+    execution_queue = m_execution_queue;
+    dependency_count = m_dependency_count;
+    graph_assert(!execution_queue.empty(), "No nodes to execute!");
+
+    auto time_after_freeze = m_timer.get_msecs_reset();
+    graph_log_info(
+            "Starting execution(%zu) after freezed %.3f ms", ++m_execute_count,
+            time_after_freeze);
 
     auto worker = [&]() {
         while (true) {
@@ -198,13 +208,21 @@ void Graph::execute() {
             if (node) {
                 //! real work execute the task
                 Gtimer t;
-                graph_log_debug("Executing %s", node->id().c_str());
+
+                graph_log_info("Executing %s", node->id().c_str());
                 node->status(Node::Status::RUNNING);
                 node->start_time(m_timer.get_msecs());
                 node->task()();
-                graph_log_debug("Executed %s", node->id().c_str());
                 node->status(Node::Status::FINISHED);
                 node->duration(t.get_msecs());
+                {
+                    std::unique_lock<std::mutex> _(m_executed_node_count_mtx);
+                    m_executed_node_count++;
+                    graph_log_info(
+                            "Executed %s (%zu/%zu)", node->id().c_str(),
+                            m_executed_node_count, m_nodes.size());
+                }
+
                 {
                     std::lock_guard<std::mutex> lock(mtx);
                     for (const auto& pair : m_nodes) {
@@ -212,8 +230,8 @@ void Graph::execute() {
                         auto& dependencies = n->dependencies();
                         if (std::find(dependencies.begin(), dependencies.end(), node) !=
                             dependencies.end()) {
-                            m_dependency_count[n]--;
-                            if (m_dependency_count[n] == 0 && !n->is_executed()) {
+                            dependency_count[n]--;
+                            if (dependency_count[n] == 0 && !n->is_executed()) {
                                 execution_queue.push(n);
                                 cv.notify_one();
                             }
@@ -240,17 +258,8 @@ void Graph::execute() {
         thread.join();
     }
 
-    execution_status();
-
-    //! restore the dependency count and restore the executed status
-    for (const auto& pair : restore_dependency_count) {
-        m_dependency_count[pair.first] = pair.second;
-        pair.first->restore();
-    }
-
+    verify();
     graph_log_info("Execution completed in %.3f ms", m_timer.get_msecs());
-    //! reset the timer for loop execute
-    m_timer.reset();
 }
 
 bool Graph::is_cyclic(
@@ -274,9 +283,7 @@ bool Graph::is_cyclic(
     return false;
 }
 bool Graph::is_connected() {
-    if (m_nodes.empty()) {
-        return true;
-    }
+    graph_assert(m_nodes.size() > 0, "No nodes in the graph!");
 
     // Create adjacency list for undirected graph representation
     std::unordered_map<Node*, std::unordered_set<Node*>> undirected_graph;
@@ -328,16 +335,11 @@ bool Graph::is_connected() {
     return ret;
 }
 
-void Graph::execution_status() {
-    size_t executed_count = 0;
-    for (const auto& pair : m_nodes) {
-        if (pair.second->is_executed()) {
-            ++executed_count;
-        }
-    }
-    graph_log_debug(
-            "Execution status: %zu/%zu nodes executed", executed_count, m_nodes.size());
-    if (executed_count == m_nodes.size()) {
+void Graph::verify() {
+    graph_log_info(
+            "Execution status: %zu/%zu nodes executed", m_executed_node_count,
+            m_nodes.size());
+    if (m_executed_node_count == m_nodes.size()) {
         graph_log_info("Execution completed successfully");
     } else {
         graph_log_error("some nodes are not executed, details:");
@@ -359,7 +361,8 @@ void Graph::dump_node_status() {
         for (const auto& pair : m_nodes) {
             Node* node = pair.second;
             graph_log_debug(
-                    "Node \"%s\" status: %s, duration: %.3f ms, wait sched: %.3f ms",
+                    "Node \"%s\" status: %s, exec duration: %.3f ms, wait sched: %.3f "
+                    "ms",
                     node->id().c_str(), node->status_str().c_str(), node->duration(),
                     node->start_time());
         }

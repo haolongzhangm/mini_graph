@@ -2,6 +2,7 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
+#include <queue>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -201,12 +202,34 @@ public:
 private:
     /* graph all nodes */
     std::unordered_map<std::string, Node*> m_nodes;
+
     /* depends on the number of nodes */
     std::unordered_map<Node*, size_t> m_dependency_count;
+
     /*
      * Mutex to protect the execution of the tasks
      */
     std::mutex mtx;
+
+    /*
+     * Queue to store the tasks wait to be executed
+     */
+    std::queue<Node*> m_execution_queue;
+
+    /*
+     * Prepare the execution of the tasks
+     */
+    void prepare_exe();
+
+    /*
+     * restore the node status
+     */
+    inline void restore() {
+        for (auto& [_, node] : m_nodes) {
+            node->restore();
+        }
+        m_executed_node_count = 0;
+    }
 
     /*
      * flag to represent if the graph is freezed
@@ -242,15 +265,25 @@ private:
     size_t m_thread_worker_num;
 
     /*
-     * Execute the tasks in the graph
+     * verify the execute
      */
-    void execution_status();
+    void verify();
 
     /*
      * dump the node status of graph
      */
-
     void dump_node_status();
+
+    /*
+     * count for execute
+     */
+    size_t m_execute_count = 0;
+
+    /*
+     * already executed node number
+     */
+    size_t m_executed_node_count = 0;
+    std::mutex m_executed_node_count_mtx;
 };
 
 /************* helper ************/

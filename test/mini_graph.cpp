@@ -4,6 +4,38 @@
 
 using namespace mini_graph;
 
+namespace {
+class Timer {
+    using clock = ::std::chrono::high_resolution_clock;
+    clock::time_point m_start;
+
+public:
+    Timer() { reset(); };
+
+    void reset() { m_start = clock::now(); }
+
+    double get_secs() const {
+        auto now = std::chrono::high_resolution_clock::now();
+        return ::std::chrono::duration_cast<::std::chrono::nanoseconds>(now - m_start)
+                       .count() *
+               1e-9;
+    }
+    double get_msecs() const {
+        auto now = std::chrono::high_resolution_clock::now();
+        return ::std::chrono::duration_cast<::std::chrono::nanoseconds>(now - m_start)
+                       .count() *
+               1e-6;
+    }
+    double get_secs_reset() {
+        auto ret = get_secs();
+        reset();
+        return ret;
+    }
+    double get_msecs_reset() { return get_secs_reset() * 1e3; }
+};
+
+}  // namespace
+
 TEST(Graph, init) {
     Graph g;
 }
@@ -267,6 +299,37 @@ TEST(Graph, check_value_1) {
 
     g.execute();
     ASSERT_EQ(a, 2);
+}
+
+TEST(Graph, mult_thread_add_task) {
+    Graph g;
+
+    int a = 0;
+
+    auto _ = std::thread([&]() {
+        g.add_task("A", [&a]() {
+            a += 1;
+            std::cout << "Executing A" << std::endl;
+        });
+    });
+    auto _2 = std::thread([&]() {
+        g.add_task("B", [&a]() {
+            a += 5;
+            std::cout << "Executing B" << std::endl;
+        });
+    });
+    _.join();
+    _2.join();
+
+    g.dependency("A", "B");
+
+    ASSERT_EQ(a, 0);
+    g.freezed();
+    g.execute();
+    ASSERT_EQ(a, 6);
+
+    g.execute();
+    ASSERT_EQ(a, 12);
 }
 
 TEST(Graph, check_value_2) {
@@ -619,6 +682,60 @@ TEST(Graph, five_stage_pipeline) {
         //! assert with 1e-6
         ASSERT_NEAR(result[i], expected[i], 1e-6);
     }
+
+    //! rerun
+    g.execute();
+}
+
+TEST(Graph, worker_parallel) {
+    size_t max = std::thread::hardware_concurrency();
+    if (max < 4) {
+        return;
+    }
+
+    Graph g(4);
+
+    //! create 4 task, each task will sleep 100ms
+    g.add_task("A", []() {
+        printf("A start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        printf("A end\n");
+    });
+
+    g.add_task("B", []() {
+        printf("B start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        printf("B end\n");
+    });
+
+    g.add_task("C", []() {
+        printf("C start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        printf("C end\n");
+    });
+
+    g.add_task("D", []() {
+        printf("D start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        printf("D end\n");
+    });
+
+    //! create a virtual node to trigger the pipeline
+    g.add_task("end", []() { printf("worker_parallel end\n"); });
+    g.dependency("end", {"A", "B", "C", "D"});
+
+    g.freezed();
+    Timer t;
+    g.execute();
+
+    //! check time
+    double time = t.get_msecs_reset();
+    ASSERT_NEAR(time, 100.0, 20.0);
+
+    //! rerun
+    g.execute();
+    time = t.get_msecs_reset();
+    ASSERT_NEAR(time, 100.0, 20.0);
 }
 
 int main(int argc, char** argv) {

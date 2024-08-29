@@ -148,19 +148,20 @@ public:
 
     /*
      * Add a dependency between two tasks
-     * @param fromId: Task id of the task that depends on the other task
-     * @param toIds: Task ids of the tasks that the task depends on
+     * @param who: Task id of the task that depends on the other task
+     * @param depend_whos: Task ids of the tasks that the task depends on
      */
     void dependency(
-            const std::string& fromId, const std::initializer_list<std::string>& toIds);
-    void dependency(const std::string& fromId, const std::string& toIds);
+            const std::string& who,
+            const std::initializer_list<std::string>& depend_whos);
+    void dependency(const std::string& who, const std::string& depend_who);
     void virtual_dependency(
-            const std::string& fromId,
-            const std::initializer_list<std::string>& toIds) {
-        dependency(fromId, toIds);
+            const std::string& who,
+            const std::initializer_list<std::string>& depend_whos) {
+        dependency(who, depend_whos);
     };
-    void virtual_dependency(const std::string& fromId, const std::string& toIds) {
-        dependency(fromId, toIds);
+    void virtual_dependency(const std::string& who, const std::string& depend_who) {
+        dependency(who, depend_who);
     };
 
     /*
@@ -187,7 +188,17 @@ public:
      */
     void freezed();
 
-    ~Graph();
+    /*
+     * dump the node status of graph
+     * @param force: do not care about the log level, just dump
+     */
+    void dump_node_status(bool force = true);
+
+    ~Graph() {
+        for (auto& pair : m_nodes) {
+            delete pair.second;
+        }
+    }
 
     /* helper */
     static void __assert_fail__(
@@ -269,11 +280,6 @@ private:
      * verify the execute
      */
     void verify();
-
-    /*
-     * dump the node status of graph
-     */
-    void dump_node_status();
 
     /*
      * count for execute

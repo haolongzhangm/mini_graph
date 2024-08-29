@@ -63,22 +63,21 @@ void Graph::add_task(const std::string& id, Task task) {
             id.c_str());
     Node* node = new Node(id, task);
     m_nodes[id] = node;
-    m_dependency_count[node] = 0;  // Initialize dependency count
+    m_dependency_count[node] = 0;
 }
 
 void Graph::dependency(
-        const std::string& fromId, const std::initializer_list<std::string>& toIds) {
-    Node* from = m_nodes.at(fromId);
-    for (const std::string& toId : toIds) {
-        dependency(fromId, toId);
+        const std::string& who, const std::initializer_list<std::string>& depend_whos) {
+    for (const std::string& depend_who : depend_whos) {
+        dependency(who, depend_who);
     }
 }
 
-void Graph::dependency(const std::string& fromId, const std::string& toId) {
+void Graph::dependency(const std::string& who, const std::string& depend_who) {
     std::lock_guard<std::mutex> lock(mtx);
     graph_assert(!m_is_freezed, "Graph is freezed, cannot add more dependencies!");
-    Node* from = m_nodes.at(fromId);
-    Node* to = m_nodes.at(toId);
+    Node* from = m_nodes.at(who);
+    Node* to = m_nodes.at(depend_who);
     for (const auto& dep : from->dependencies()) {
         graph_assert(
                 dep != to, "Node %s already depends on %s", from->id().c_str(),
@@ -86,12 +85,6 @@ void Graph::dependency(const std::string& fromId, const std::string& toId) {
     }
     from->dependency(to);
     m_dependency_count[from]++;
-}
-
-Graph::~Graph() {
-    for (auto& pair : m_nodes) {
-        delete pair.second;
-    }
 }
 
 bool Graph::valid() {
@@ -364,21 +357,37 @@ void Graph::verify() {
         graph_throw("Execution failed");
     }
 
-    dump_node_status();
+    dump_node_status(false);
 }
 
-void Graph::dump_node_status() {
-    //! only dump node status when debug
-    if (log_level() == GraphLogLevel::DEBUG) {
-        graph_log_debug("Node status:");
+void Graph::dump_node_status(bool force_dump) {
+    if (force_dump || log_level() == GraphLogLevel::DEBUG) {
+        auto old_level = log_level();
+        config_log_level(GraphLogLevel::DEBUG);
+        graph_log_debug("++++++++++++++++dump node status start+++++++++++++++");
         for (const auto& pair : m_nodes) {
             Node* node = pair.second;
+            auto may_duration = node->duration();
+            auto may_start_time = node->start_time();
+            if (node->status() == Node::Status::FINISHED) {
+                may_duration = node->duration();
+                may_start_time = node->start_time();
+            } else if (node->status() == Node::Status::RUNNING) {
+                may_duration = m_timer.get_msecs() - node->start_time();
+            } else if (node->status() == Node::Status::WAITING) {
+                may_duration = 0;
+                may_start_time = 0;
+            } else {
+                graph_throw("Node status is invalid");
+            }
             graph_log_debug(
                     "Node \"%s\" status: %s, exec duration: %.3f ms, wait sched: %.3f "
                     "ms",
-                    node->id().c_str(), node->status_str().c_str(), node->duration(),
-                    node->start_time());
+                    node->id().c_str(), node->status_str().c_str(), may_duration,
+                    may_start_time);
         }
+        graph_log_debug("++++++++++++++++dump node status end+++++++++++++++\n");
+        config_log_level(old_level);
     }
 }
 

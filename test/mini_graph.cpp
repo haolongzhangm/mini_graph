@@ -700,13 +700,13 @@ TEST(Graph, worker_parallel) {
     //! create 4 task, each task will sleep 100ms
     g.add_task("A", []() {
         printf("A start\n");
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
         printf("A end\n");
     });
 
     g.add_task("B", []() {
         printf("B start\n");
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
         printf("B end\n");
     });
 
@@ -742,6 +742,20 @@ TEST(Graph, worker_parallel) {
     //! check return time
     ASSERT_NEAR(ret_time0, 100.0, 20.0);
     ASSERT_NEAR(ret_time1, 100.0, 20.0);
+
+    //! async run to call dump_node_status
+    auto _ = std::thread([&]() { g.execute(); });
+    auto __ = std::thread([&]() {
+        g.dump_node_status();
+        std::this_thread::sleep_for(std::chrono::milliseconds(12));
+        g.dump_node_status();
+        std::this_thread::sleep_for(std::chrono::milliseconds(12));
+        g.dump_node_status();
+    });
+
+    __.join();
+    _.join();
+    g.dump_node_status();
 }
 
 int main(int argc, char** argv) {

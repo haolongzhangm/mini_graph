@@ -171,8 +171,9 @@ public:
 
     /*
      * Execute the tasks in the graph
+     * @return Execution time in ms
      */
-    void execute();
+    double execute();
 
     /*
      * get thread worker number for the graph

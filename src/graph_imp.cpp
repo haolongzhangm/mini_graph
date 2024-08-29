@@ -4,6 +4,12 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#ifdef __ANDROID__
+#include <android/log.h>
+#include <sys/system_properties.h>
+#elif defined(__OHOS__)
+#include <hilog/log.h>
+#endif
 
 #include "graph.h"
 
@@ -150,6 +156,9 @@ void Graph::freezed() {
                 graph_log_debug(
                         "Node \"%s\" depends: \"%s\"", pair.second->id().c_str(),
                         dependencies_str.c_str());
+            } else {
+                graph_log_debug(
+                        "Node \"%s\" has no dependencies", pair.second->id().c_str());
             }
         }
         graph_log_debug(
@@ -172,7 +181,7 @@ void Graph::prepare_exe() {
     }
 }
 
-void Graph::execute() {
+double Graph::execute() {
     restore();
     graph_assert(m_is_freezed, "Graph is not freezed! please call freezed() first!");
 
@@ -259,7 +268,11 @@ void Graph::execute() {
     }
 
     verify();
-    graph_log_info("Execution completed in %.3f ms", m_timer.get_msecs());
+
+    double used_time = m_timer.get_msecs();
+    graph_log_info("Execution completed in %.3f ms", used_time);
+
+    return used_time;
 }
 
 bool Graph::is_cyclic(
@@ -409,13 +422,32 @@ std::string __ssprintf__(const char* fmt, ...) {
     va_end(ap);
     return rst;
 }
-GraphLogLevel g_log_level = GraphLogLevel::DEBUG;
 
-//! define a default log handler by printf
+auto config_dlf_log_level() -> std::pair<bool, GraphLogLevel> {
+    bool is_use_env = false;
+    auto dlf_level = GraphLogLevel::WARN;
+    if (auto* env = ::std::getenv("MINI_GRAPH_OVERRIDE_LOG_LEVEL")) {
+        dlf_level = static_cast<GraphLogLevel>(::std::stoi(env));
+        is_use_env = true;
+    }
+
+#ifdef __ANDROID__
+    char buf[PROP_VALUE_MAX];
+    if (__system_property_get("MINI_GRAPH_OVERRIDE_LOG_LEVEL", buf) > 0) {
+        dlf_level = static_cast<GraphLogLevel>(atoi(buf));
+        is_use_env = true;
+    }
+#endif
+
+    return {is_use_env, dlf_level};
+}
+
+std::pair<bool, GraphLogLevel> g_log_level = config_dlf_log_level();
+//! define a default log handler
 void default_log_handler(
         GraphLogLevel level, const char* file, const char* func, int line,
         const char* fmt, va_list ap) {
-    if (level < g_log_level)
+    if (level < g_log_level.second)
         return;
 
     const char* level_str = nullptr;
@@ -439,6 +471,62 @@ void default_log_handler(
     printf("[%s] %s:%d %s: ", level_str, file, line, func);
     vprintf(fmt, ap);
     printf("\n");
+
+    //! now call the android/ohos log
+#ifdef __ANDROID__
+    int android_level = ANDROID_LOG_UNKNOWN;
+    switch (level) {
+        case GraphLogLevel::DEBUG:
+            android_level = ANDROID_LOG_DEBUG;
+            break;
+        case GraphLogLevel::INFO:
+            android_level = ANDROID_LOG_INFO;
+            break;
+        case GraphLogLevel::WARN:
+            android_level = ANDROID_LOG_WARN;
+            break;
+        case GraphLogLevel::ERROR:
+            android_level = ANDROID_LOG_ERROR;
+            break;
+        default:
+            android_level = ANDROID_LOG_UNKNOWN;
+            break;
+    }
+    __android_log_vprint(android_level, "mini_graph", fmt, ap);
+#elif defined(__OHOS__)
+    //! refer to sysroot/usr/include/hilog/log.h @LogLevel
+    //! ohos use same name `LogLevel` as some other library
+    //! so we use `_OhOsLogLevel` to avoid conflict
+    enum class _OhOsLogLevel : unsigned char {
+        LOG_DEBUG = 3,
+        LOG_INFO = 4,
+        LOG_WARN = 5,
+        LOG_ERROR = 6,
+        LOG_FATAL = 7,
+    };
+
+    _OhOsLogLevel ohos_level = _OhOsLogLevel::LOG_INFO;
+    switch (level) {
+        case GraphLogLevel::DEBUG:
+            ohos_level = _OhOsLogLevel::LOG_DEBUG;
+            break;
+        case GraphLogLevel::INFO:
+            ohos_level = _OhOsLogLevel::LOG_INFO;
+            break;
+        case GraphLogLevel::WARN:
+            ohos_level = _OhOsLogLevel::LOG_WARN;
+            break;
+        case GraphLogLevel::ERROR:
+            ohos_level = _OhOsLogLevel::LOG_ERROR;
+            break;
+        default:
+            ohos_level = _OhOsLogLevel::LOG_INFO;
+            break;
+    }
+    OH_LOG_Print(
+            LOG_APP, static_cast<::LogLevel>(ohos_level), LOG_DOMAIN, "mini_graph", fmt,
+            ap);
+#endif
 }
 
 GraphLogHandler g_log_handler = default_log_handler;
@@ -479,9 +567,15 @@ GraphLogHandler Graph::config_logger(GraphLogHandler handler) {
 }
 
 void Graph::config_log_level(GraphLogLevel level) {
-    g_log_level = level;
+    if (g_log_level.first && g_log_level.second != level) {
+        printf("prioritize the use of env log: %d, config level: %d do not "
+               "take effect!!",
+               static_cast<int>(g_log_level.second), static_cast<int>(level));
+    } else {
+        g_log_level.second = level;
+    }
 }
 
 GraphLogLevel Graph::log_level() {
-    return g_log_level;
+    return g_log_level.second;
 }

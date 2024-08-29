@@ -43,7 +43,9 @@ TEST(Graph, init) {
 TEST(Graph, config_log_level) {
     Graph g;
     g.config_log_level(GraphLogLevel::INFO);
+    ASSERT_EQ(g.log_level(), GraphLogLevel::INFO);
     g.config_log_level(GraphLogLevel::DEBUG);
+    ASSERT_EQ(g.log_level(), GraphLogLevel::DEBUG);
 }
 
 TEST(Graph, add_task) {
@@ -726,16 +728,20 @@ TEST(Graph, worker_parallel) {
 
     g.freezed();
     Timer t;
-    g.execute();
+    double ret_time0 = g.execute();
 
     //! check time
     double time = t.get_msecs_reset();
     ASSERT_NEAR(time, 100.0, 20.0);
 
     //! rerun
-    g.execute();
+    double ret_time1 = g.execute();
     time = t.get_msecs_reset();
     ASSERT_NEAR(time, 100.0, 20.0);
+
+    //! check return time
+    ASSERT_NEAR(ret_time0, 100.0, 20.0);
+    ASSERT_NEAR(ret_time1, 100.0, 20.0);
 }
 
 int main(int argc, char** argv) {

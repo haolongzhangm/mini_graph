@@ -758,6 +758,88 @@ TEST(Graph, worker_parallel) {
     g.dump_node_status();
 }
 
+TEST(Graph, cpu_mask_and_priority) {
+    size_t max = std::thread::hardware_concurrency();
+    if (max < 4) {
+        return;
+    }
+#ifdef __linux__
+    Graph g(4);
+
+    g.add_task(
+            "A",
+            []() {
+                printf("A start\n");
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                printf("A end\n");
+            },
+            0xFF, 20);
+
+    g.add_task(
+            "B",
+            []() {
+                printf("B start\n");
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                printf("B end\n");
+            },
+            0, 19);
+
+    g.add_task(
+            "C",
+            []() {
+                printf("C start\n");
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                printf("C end\n");
+            },
+            0xF, -19);
+
+    g.add_task(
+            "D",
+            []() {
+                printf("D start\n");
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                printf("D end\n");
+            },
+            0xFFFFF, -20);
+
+    //! create a virtual node to trigger the pipeline
+    g.add_task("end", []() { printf("worker_parallel end\n"); });
+    g.dependency("end", {"A", "B", "C", "D"});
+
+    g.freezed();
+    Timer t;
+    double ret_time0 = g.execute();
+
+    //! check time
+    double time = t.get_msecs_reset();
+    ASSERT_NEAR(time, 100.0, 20.0);
+
+    //! rerun
+    double ret_time1 = g.execute();
+    time = t.get_msecs_reset();
+    ASSERT_NEAR(time, 100.0, 20.0);
+
+    //! check return time
+    ASSERT_NEAR(ret_time0, 100.0, 20.0);
+    ASSERT_NEAR(ret_time1, 100.0, 20.0);
+
+    //! async run to call dump_node_status
+    auto _ = std::thread([&]() { g.execute(); });
+    auto __ = std::thread([&]() {
+        g.dump_node_status();
+        std::this_thread::sleep_for(std::chrono::milliseconds(12));
+        g.dump_node_status();
+        std::this_thread::sleep_for(std::chrono::milliseconds(12));
+        g.dump_node_status();
+    });
+
+    __.join();
+    _.join();
+    g.dump_node_status();
+
+#endif
+}
+
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

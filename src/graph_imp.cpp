@@ -11,6 +11,13 @@
 #include <hilog/log.h>
 #endif
 
+#ifdef __linux__
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <cstring>
+#endif
+
 #include "graph.h"
 
 using namespace mini_graph;
@@ -42,6 +49,40 @@ Gtimer::Gtimer() {
     reset();
 }
 
+void Node::config() {
+#ifdef __linux__
+    //! config cpu mask
+    if (m_cpu_mask) {
+        auto ret = syscall(
+                __NR_sched_setaffinity, gettid(), sizeof(m_cpu_mask), &m_cpu_mask);
+        if (ret) {
+            graph_log_warn(
+                    "Node: %s failed to setaffinity: mask=0x%x err: %s (%d)",
+                    id().c_str(), m_cpu_mask, strerror(errno), errno);
+        } else {
+            graph_log_info("Node: %s setaffinity: mask=0x%x", id().c_str(), m_cpu_mask);
+        }
+    }
+
+    //! config priority,
+    if (m_priority >= -20 && m_priority <= 19) {
+        auto ret = setpriority(PRIO_PROCESS, 0, -20);
+        if (ret) {
+            graph_log_warn(
+                    "Node: %s failed to setpriority: priority=%d err: %s (%d)",
+                    id().c_str(), m_priority, strerror(errno), errno);
+        } else {
+            graph_log_info(
+                    "Node: %s setpriority: priority=%d", id().c_str(), m_priority);
+        }
+    } else if (m_priority != INT_MAX) {
+        graph_log_warn(
+                "Node: %s invalid priority: %d, should be in [-20, 19]", id().c_str(),
+                m_priority);
+    }
+#endif
+}
+
 Graph::Graph(size_t thread_worker_num) : m_thread_worker_num(thread_worker_num) {
     graph_assert(
             thread_worker_num > 0, "thread worker number should be greater than 0");
@@ -55,13 +96,15 @@ Graph::Graph(size_t thread_worker_num) : m_thread_worker_num(thread_worker_num) 
     }
 };
 
-void Graph::add_task(const std::string& id, Task task) {
+void Graph::add_task(const std::string& id, Task task, size_t cpu_mask, int priority) {
     std::lock_guard<std::mutex> lock(mtx);
     graph_assert(!m_is_freezed, "Graph is freezed, cannot add more nodes!");
     graph_assert(
             m_nodes.find(id) == m_nodes.end(), "Node with id \"%s\" already exists!",
             id.c_str());
     Node* node = new Node(id, task);
+    node->cpu_mask(cpu_mask);
+    node->priority(priority);
     m_nodes[id] = node;
     m_dependency_count[node] = 0;
 }
@@ -214,6 +257,7 @@ double Graph::execute() {
                 graph_log_info("Executing %s", node->id().c_str());
                 node->status(Node::Status::RUNNING);
                 node->start_time(m_timer.get_msecs());
+                node->config();
                 node->task()();
                 node->status(Node::Status::FINISHED);
                 node->duration(t.get_msecs());
@@ -434,7 +478,7 @@ std::string __ssprintf__(const char* fmt, ...) {
 
 auto config_dlf_log_level() -> std::pair<bool, GraphLogLevel> {
     bool is_use_env = false;
-    auto dlf_level = GraphLogLevel::WARN;
+    auto dlf_level = GraphLogLevel::INFO;
     if (auto* env = ::std::getenv("MINI_GRAPH_OVERRIDE_LOG_LEVEL")) {
         dlf_level = static_cast<GraphLogLevel>(::std::stoi(env));
         is_use_env = true;

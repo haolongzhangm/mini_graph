@@ -1,3 +1,4 @@
+#include <climits>
 #include <cstdarg>
 #include <functional>
 #include <iostream>
@@ -98,6 +99,35 @@ public:
         m_start_time = 0.0;
     }
 
+    /*
+     * set cpu mask
+     * @param mask: cpu mask
+     */
+    void cpu_mask(size_t mask) { m_cpu_mask = mask; }
+
+    /*
+     * get cpu mask
+     * @return cpu mask
+     */
+    size_t cpu_mask() const { return m_cpu_mask; }
+
+    /*
+     * set priority
+     * @param priority: priority
+     */
+    void priority(int priority) { m_priority = priority; }
+
+    /*
+     * get priority
+     * @return priority
+     */
+    int priority() const { return m_priority; }
+
+    /*
+     * config mask and priority
+     */
+    void config();
+
 private:
     std::string m_id;
     Task m_task;
@@ -105,6 +135,9 @@ private:
     double m_duration = 0.0;
     double m_start_time = 0.0;
     Status m_status = Status::WAITING;
+    size_t m_cpu_mask = 0;
+    /* at Linux priority range is -20 to 19 so we use INT_MAX to means do not config */
+    int m_priority = INT_MAX;
 };
 
 class Gtimer {
@@ -143,8 +176,12 @@ public:
      * add a task to the graph
      * @param id: Task id
      * @param task: Task to be executed
+     * @param cpu_mask: cpu mask for the task
+     * @param priority: priority for the task
      */
-    void add_task(const std::string& id, Task task);
+    void add_task(
+            const std::string& id, Task task, size_t cpu_mask = 0,
+            int priority = INT_MAX);
 
     /*
      * Add a dependency between two tasks

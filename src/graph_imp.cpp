@@ -49,6 +49,17 @@ Gtimer::Gtimer() {
     reset();
 }
 
+void Node::exec() {
+    //! TODO: verify the sched delay on weak cpu
+    auto _ = std::thread([this]() {
+        config();
+        task()();
+    });
+
+    //! join to block the thread
+    _.join();
+}
+
 void Node::config() {
 #ifdef __linux__
     //! config cpu mask
@@ -251,14 +262,14 @@ double Graph::execute() {
                 }
             }
             if (node) {
-                //! real work execute the task
+                //! real work execute the task, infact graph worker just call Node exec,
+                //! which will create a new thread to execute the real task
                 Gtimer t;
 
                 graph_log_info("Executing %s", node->id().c_str());
                 node->status(Node::Status::RUNNING);
                 node->start_time(m_timer.get_msecs());
-                node->config();
-                node->task()();
+                node->exec();
                 node->status(Node::Status::FINISHED);
                 node->duration(t.get_msecs());
                 {

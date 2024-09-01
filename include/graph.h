@@ -44,12 +44,6 @@ public:
     const std::vector<Node*>& dependencies() const { return m_dependencies; }
 
     /*
-     * Get node task
-     * @return Node task
-     */
-    Task task() const { return m_task; }
-
-    /*
      * Check if the node is executed
      * @return True if the node is executed, false otherwise
      */
@@ -124,9 +118,12 @@ public:
     int priority() const { return m_priority; }
 
     /*
-     * config mask and priority
+     * execute the node
+     * as graph use the thread pool worker and node will config cpu mask and priority
+     * so we need use a new thread to execute the task, which will not affect the graph
+     * thread pool worker
      */
-    void config();
+    void exec();
 
 private:
     std::string m_id;
@@ -138,6 +135,17 @@ private:
     size_t m_cpu_mask = 0;
     /* at Linux priority range is -20 to 19 so we use INT_MAX to means do not config */
     int m_priority = INT_MAX;
+    /*
+     * config mask and priority
+     */
+    void config();
+
+    /*
+     * Get node task
+     * @return Node task
+     */
+    Task task() const { return m_task; }
+
 };
 
 class Gtimer {

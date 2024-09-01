@@ -359,6 +359,39 @@ double Graph::execute() {
     double used_time = m_timer.get_msecs();
     graph_log_info("Execution completed in %.3f ms", used_time);
 
+    //! show very run time postion when debug
+    //! we will show one hundred time postion, eg, WWWWWRRRRRRFFFFFFF
+    if (log_level() == GraphLogLevel::DEBUG) {
+        graph_log_debug(
+                "++++++++++++++++++++++Execution time "
+                "details:+++++++++++++++++++");
+        for (const auto& pair : m_nodes) {
+            Node* node = pair.second;
+            std::string time_pos;
+            auto start_time = node->start_time();
+            auto duration = node->duration();
+            constexpr unsigned int zoom_to = 50;
+            //! Divide used_time into zoom_to ratio
+            start_time = start_time * zoom_to / used_time;
+            duration = duration * zoom_to / used_time;
+            for (int i = 0; i < zoom_to; i++) {
+                if (i >= start_time && i < start_time + duration) {
+                    time_pos += "R";
+                } else if (i < start_time) {
+                    time_pos += "W";
+                } else {
+                    time_pos += "F";
+                }
+            }
+            //! mark last is F, as zoom may cause last is not F
+            time_pos[zoom_to - 1] = 'F';
+            graph_log_debug("%s : \"%s\"", time_pos.c_str(), node->id().c_str());
+        }
+        graph_log_debug(
+                "++++++++++++++++++++++Execution time "
+                "details:+++++++++++++++++++");
+    }
+
     return used_time;
 }
 

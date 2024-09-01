@@ -53,6 +53,43 @@ void Node::exec() {
     //! TODO: verify the sched delay on weak cpu
     auto _ = std::thread([this]() {
         config();
+
+#ifdef __linux__
+        //! get the real cpu mask and priority when DEBUG mode
+        if (GraphLogLevel::DEBUG == Graph::log_level()) {
+            cpu_set_t cpu_mask;
+            CPU_ZERO(&cpu_mask);
+            auto ret = sched_getaffinity(0, sizeof(cpu_mask), &cpu_mask);
+            if (ret) {
+                graph_log_warn(
+                        "Node: \"%s\" failed to getaffinity: err: %s (%d)",
+                        id().c_str(), strerror(errno), errno);
+            } else {
+                std::string cpu_ids = "";
+                for (int i = 0; i < CPU_SETSIZE; i++) {
+                    if (CPU_ISSET(i, &cpu_mask)) {
+                        cpu_ids += std::to_string(i) + ",";
+                    }
+                }
+                graph_log_info(
+                        "Node: \"%s\" getaffinity: cpu id: %s", id().c_str(),
+                        cpu_ids.c_str());
+            }
+
+            int priority = getpriority(PRIO_PROCESS, 0);
+            if (priority == -1) {
+                graph_log_warn(
+                        "Node: \"%s\" failed to getpriority: err: %s (%d)",
+                        id().c_str(), strerror(errno), errno);
+            } else {
+                graph_log_info(
+                        "Node: \"%s\" getpriority: priority=%d", id().c_str(),
+                        priority);
+            }
+        }
+
+#endif
+
         task()();
     });
 
@@ -68,10 +105,11 @@ void Node::config() {
                 __NR_sched_setaffinity, gettid(), sizeof(m_cpu_mask), &m_cpu_mask);
         if (ret) {
             graph_log_warn(
-                    "Node: %s failed to setaffinity: mask=0x%x err: %s (%d)",
+                    "Node: \"%s\" failed to setaffinity: mask=0x%x err: %s (%d)",
                     id().c_str(), m_cpu_mask, strerror(errno), errno);
         } else {
-            graph_log_info("Node: %s setaffinity: mask=0x%x", id().c_str(), m_cpu_mask);
+            graph_log_info(
+                    "Node: \"%s\" setaffinity: mask=0x%x", id().c_str(), m_cpu_mask);
         }
     }
 
@@ -80,16 +118,16 @@ void Node::config() {
         auto ret = setpriority(PRIO_PROCESS, 0, -20);
         if (ret) {
             graph_log_warn(
-                    "Node: %s failed to setpriority: priority=%d err: %s (%d)",
+                    "Node: \"%s\" failed to setpriority: priority=%d err: %s (%d)",
                     id().c_str(), m_priority, strerror(errno), errno);
         } else {
             graph_log_info(
-                    "Node: %s setpriority: priority=%d", id().c_str(), m_priority);
+                    "Node: \"%s\" setpriority: priority=%d", id().c_str(), m_priority);
         }
     } else if (m_priority != INT_MAX) {
         graph_log_warn(
-                "Node: %s invalid priority: %d, should be in [-20, 19]", id().c_str(),
-                m_priority);
+                "Node: \"%s\" invalid priority: %d, should be in [-20, 19]",
+                id().c_str(), m_priority);
     }
 #endif
 }
@@ -107,7 +145,8 @@ Graph::Graph(size_t thread_worker_num) : m_thread_worker_num(thread_worker_num) 
     }
 };
 
-void Graph::add_task(const std::string& id, Task task, size_t cpu_mask, int priority) {
+void Graph::add_task(
+        const std::string& id, Task task, unsigned int cpu_mask, int priority) {
     std::lock_guard<std::mutex> lock(mtx);
     graph_assert(!m_is_freezed, "Graph is freezed, cannot add more nodes!");
     graph_assert(

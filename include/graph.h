@@ -132,7 +132,7 @@ private:
     double m_duration = 0.0;
     double m_start_time = 0.0;
     Status m_status = Status::WAITING;
-    size_t m_cpu_mask = 0;
+    unsigned int m_cpu_mask = 0;
     /* at Linux priority range is -20 to 19 so we use INT_MAX to means do not config */
     int m_priority = INT_MAX;
     /*
@@ -188,7 +188,7 @@ public:
      * @param priority: priority for the task
      */
     void add_task(
-            const std::string& id, Task task, size_t cpu_mask = 0,
+            const std::string& id, Task task, unsigned int cpu_mask = 0,
             int priority = INT_MAX);
 
     /*

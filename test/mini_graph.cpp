@@ -840,6 +840,47 @@ TEST(Graph, cpu_mask_and_priority) {
 #endif
 }
 
+TEST(Graph, grap_in_grap) {
+    Graph g(4);
+
+    g.add_task("A", []() {
+        printf("A start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        printf("A end\n");
+    });
+
+    g.add_task("B", []() {
+        printf("B start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        printf("B end\n");
+    });
+
+    g.dependency("A", "B");
+
+    Graph sub_g(2);
+
+    sub_g.add_task("C", []() {
+        printf("C start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        printf("C end\n");
+    });
+
+    sub_g.add_task("D", []() {
+        printf("D start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        printf("D end\n");
+    });
+
+    sub_g.dependency("C", "D");
+    sub_g.freezed();
+
+    g.add_task("sub_g", [&sub_g]() { sub_g.execute(); });
+    g.dependency("B", "sub_g");
+
+    g.freezed();
+    g.execute();
+}
+
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -115,7 +115,7 @@ void Node::config() {
 
     //! config priority,
     if (m_priority >= -20 && m_priority <= 19) {
-        auto ret = setpriority(PRIO_PROCESS, 0, -20);
+        auto ret = setpriority(PRIO_PROCESS, 0, m_priority);
         if (ret) {
             graph_log_warn(
                     "Node: \"%s\" failed to setpriority: priority=%d err: %s (%d)",

@@ -286,13 +286,22 @@ double Graph::execute() {
             "Starting execution(%zu) after freezed %.3f ms", ++m_execute_count,
             time_after_freeze);
 
+    //! worker id
+    size_t worker_id = 0;
+    std::mutex mtx_id;
     auto worker = [&]() {
+        size_t id = 0;
+        {
+            std::lock_guard<std::mutex> lock(mtx_id);
+            id = worker_id++;
+        }
         while (true) {
             Node* node = nullptr;
             {
                 std::unique_lock<std::mutex> lock(mtx);
                 cv.wait(lock, [&]() { return finished || !execution_queue.empty(); });
                 if (finished && execution_queue.empty()) {
+                    graph_log_debug("worker: %zu exit", id);
                     return;  // Exit the thread if finished and queue is empty
                 }
                 if (!execution_queue.empty()) {
@@ -317,6 +326,11 @@ double Graph::execute() {
                     graph_log_info(
                             "Executed %s (%zu/%zu)", node->id().c_str(),
                             m_executed_node_count, m_nodes.size());
+                    if (m_executed_node_count == m_nodes.size()) {
+                        finished = true;
+                        graph_log_info("All nodes executed notify all threads to exit");
+                        cv.notify_all();
+                    }
                 }
 
                 {
@@ -344,10 +358,6 @@ double Graph::execute() {
         threads.emplace_back(worker);
     }
 
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        finished = true;
-    }
     cv.notify_all();
 
     for (std::thread& thread : threads) {

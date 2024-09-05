@@ -880,6 +880,59 @@ TEST(Graph, grap_in_grap) {
     g.freezed();
     g.execute();
 }
+TEST(Graph, test_worker_parallel) {
+    size_t max = std::thread::hardware_concurrency();
+    if (max < 3) {
+        return;
+    }
+    Graph g(3);
+
+    g.add_task("A", []() {
+        printf("A start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        printf("A end\n");
+    });
+
+    g.add_task("B", []() {
+        printf("B start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        printf("B end\n");
+    });
+
+    g.add_task("C", []() {
+        printf("C start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        printf("C end\n");
+    });
+
+    g.add_task("D", []() {
+        printf("D start\n");
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        printf("D end\n");
+    });
+
+    //! this use to test worker parallel between B/C/D
+    g.dependency("B", "A");
+    g.dependency("C", "A");
+    g.dependency("D", "A");
+
+    g.freezed();
+    Timer t;
+    double ret_time0 = g.execute();
+
+    //! check time
+    double time = t.get_msecs_reset();
+    ASSERT_NEAR(time, 400.0, 20.0);
+
+    //! rerun
+    double ret_time1 = g.execute();
+    time = t.get_msecs_reset();
+    ASSERT_NEAR(time, 400.0, 20.0);
+
+    //! check return time
+    ASSERT_NEAR(ret_time0, 400.0, 20.0);
+    ASSERT_NEAR(ret_time1, 400.0, 20.0);
+}
 
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);

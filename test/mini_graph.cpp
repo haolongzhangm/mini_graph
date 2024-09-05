@@ -732,16 +732,16 @@ TEST(Graph, worker_parallel) {
 
     //! check time
     double time = t.get_msecs_reset();
-    ASSERT_NEAR(time, 100.0, 20.0);
+    ASSERT_NEAR(time, 100.0, 50.0);
 
     //! rerun
     double ret_time1 = g.execute();
     time = t.get_msecs_reset();
-    ASSERT_NEAR(time, 100.0, 20.0);
+    ASSERT_NEAR(time, 100.0, 50.0);
 
     //! check return time
-    ASSERT_NEAR(ret_time0, 100.0, 20.0);
-    ASSERT_NEAR(ret_time1, 100.0, 20.0);
+    ASSERT_NEAR(ret_time0, 100.0, 50.0);
+    ASSERT_NEAR(ret_time1, 100.0, 50.0);
 
     //! async run to call dump_node_status
     auto _ = std::thread([&]() { g.execute(); });

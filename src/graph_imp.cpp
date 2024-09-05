@@ -1,5 +1,6 @@
 #include <stdarg.h>
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
@@ -274,7 +275,7 @@ double Graph::execute() {
     std::condition_variable cv;
     std::queue<Node*> execution_queue;
     std::unordered_map<Node*, size_t> dependency_count;
-    bool finished = false;
+    std::atomic<bool> finished(false);
 
     //! copy the execution queue caused by loop execute
     execution_queue = m_execution_queue;
@@ -296,11 +297,25 @@ double Graph::execute() {
             id = worker_id++;
         }
         while (true) {
+            //! check if finished do not depends on cv, as sometime some worker may into
+            //! wait after finished
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                if (finished.load(std::memory_order_seq_cst)) {
+                    graph_log_debug("worker: %zu exit", id);
+                    return;
+                }
+            }
+
             Node* node = nullptr;
             {
                 std::unique_lock<std::mutex> lock(mtx);
-                cv.wait(lock, [&]() { return finished || !execution_queue.empty(); });
-                if (finished && execution_queue.empty()) {
+                cv.wait(lock, [&]() {
+                    return finished.load(std::memory_order_seq_cst) ||
+                           !execution_queue.empty();
+                });
+                if (finished.load(std::memory_order_seq_cst) &&
+                    execution_queue.empty()) {
                     graph_log_debug("worker: %zu exit", id);
                     return;  // Exit the thread if finished and queue is empty
                 }
@@ -327,9 +342,14 @@ double Graph::execute() {
                             "Executed %s (%zu/%zu)", node->id().c_str(),
                             m_executed_node_count, m_nodes.size());
                     if (m_executed_node_count == m_nodes.size()) {
-                        finished = true;
-                        graph_log_info("All nodes executed notify all threads to exit");
+                        std::unique_lock<std::mutex> _(mtx);
+                        finished.store(true, std::memory_order_seq_cst);
+                        graph_log_info(
+                                "All nodes executed notify all threads to exit, %zu "
+                                "exit",
+                                id);
                         cv.notify_all();
+                        return;
                     }
                 }
 
@@ -353,8 +373,9 @@ double Graph::execute() {
     };
 
     std::vector<std::thread> threads;
-    graph_log_info("Starting %zu worker threads", m_thread_worker_num);
-    for (size_t i = 0; i < m_thread_worker_num; ++i) {
+    auto create_thread_number = std::min(m_thread_worker_num, m_nodes.size());
+    graph_log_info("Starting %zu worker threads", create_thread_number);
+    for (size_t i = 0; i < create_thread_number; ++i) {
         threads.emplace_back(worker);
     }
 

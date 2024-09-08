@@ -934,6 +934,40 @@ TEST(Graph, test_worker_parallel) {
     ASSERT_NEAR(ret_time1, 400.0, 20.0);
 }
 
+TEST(Graph, name) {
+    Graph g(4, "test_graph");
+    ASSERT_EQ(g.name(), "test_graph");
+
+    g.add_task("A", []() {});
+
+    g.add_task("B", []() {});
+
+    g.add_task("C", []() {});
+
+    g.add_task("D", []() {});
+
+    g.add_task("E", []() {});
+
+    g.add_task("F", []() {});
+
+    g.add_task("G", []() {});
+
+    g.dependency("A", "B");
+    g.dependency("B", {"C", "E"});
+    g.dependency("C", "D");
+    g.dependency("D", {"E", "F"});
+    g.dependency("E", {"F", "G"});
+
+    ASSERT_FALSE(g.dump_dot("sdfsf.dot"));
+    g.freezed();
+    ASSERT_FALSE(g.dump_dot(""));
+    std::string file_name = g.name() + ".dot";
+    std::string file_name_e = g.name() + "e.dot";
+    ASSERT_TRUE(g.dump_dot(file_name));
+    g.execute();
+    ASSERT_TRUE(g.dump_dot(file_name_e));
+}
+
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

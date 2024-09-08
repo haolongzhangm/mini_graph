@@ -2,9 +2,11 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <fstream>
 #include <mutex>
 #include <queue>
 #include <thread>
+
 #ifdef __ANDROID__
 #include <android/log.h>
 #include <sys/system_properties.h>
@@ -133,7 +135,8 @@ void Node::config() {
 #endif
 }
 
-Graph::Graph(size_t thread_worker_num) : m_thread_worker_num(thread_worker_num) {
+Graph::Graph(size_t thread_worker_num, std::string g_name)
+        : m_thread_worker_num(thread_worker_num) {
     graph_assert(
             thread_worker_num > 0, "thread worker number should be greater than 0");
     size_t max_threads = std::thread::hardware_concurrency();
@@ -144,6 +147,19 @@ Graph::Graph(size_t thread_worker_num) : m_thread_worker_num(thread_worker_num) 
                 m_thread_worker_num, max_threads, max_threads);
         m_thread_worker_num = max_threads;
     }
+
+    if (g_name.empty()) {
+        //! get current time
+        auto now = std::chrono::system_clock::now();
+        auto now_c = std::chrono::system_clock::to_time_t(now);
+        m_name = std::string("graph_") + std::to_string(now_c);
+    } else {
+        m_name = g_name;
+    }
+
+    graph_log_info(
+            "Create Graph \"%s\" with %zu thread workers", m_name.c_str(),
+            m_thread_worker_num);
 };
 
 void Graph::add_task(
@@ -256,6 +272,38 @@ void Graph::freezed() {
     graph_log_info(
             "User Build Graph use time %.3f ms with %zu nodes",
             m_timer.get_msecs_reset(), m_nodes.size());
+}
+
+bool Graph::dump_dot(const std::string& path) {
+    std::lock_guard<std::mutex> lock(mtx);
+    if (!m_is_freezed) {
+        graph_log_error(
+                "Graph is not freezed! please call freezed() first before dump_dot!");
+        return false;
+    }
+    std::ofstream ofs(path);
+    if (ofs.is_open()) {
+        ofs << "digraph " << m_name << " {\n";
+        for (const auto& pair : m_nodes) {
+            for (const auto& dep : pair.second->dependencies()) {
+                ofs << "  \"" << dep->id() << "\" -> \"" << pair.second->id()
+                    << "\";\n";
+            }
+        }
+        ofs << "}\n";
+        ofs.close();
+        graph_log_info("Graph is dumped to %s", path.c_str());
+        graph_log_info(
+                "You can use `dot -Tpng %s -o %s.png` to generate png file",
+                path.c_str(), path.c_str());
+        return true;
+    } else {
+        graph_log_error(
+                "Failed to dump graph to \"%s\" by "
+                "%s",
+                path.c_str(), strerror(errno));
+        return false;
+    }
 }
 
 void Graph::prepare_exe() {

@@ -145,7 +145,6 @@ private:
      * @return Node task
      */
     Task task() const { return m_task; }
-
 };
 
 class Gtimer {
@@ -171,8 +170,9 @@ public:
     /*
      * Graph constructor
      * @param thread_worker_num: thread worker number for the graph
+     * @param name: graph name, if not set, will be gen by the time of hash
      */
-    Graph(size_t thread_worker_num = 8);
+    Graph(size_t thread_worker_num = 8, std::string g_name = "");
 
     //! disable any other constructor
     Graph(const Graph&) = delete;
@@ -238,6 +238,18 @@ public:
      * @param force: do not care about the log level, just dump
      */
     void dump_node_status(bool force = true);
+
+    /*
+     * dump the graph to dot
+     * @param path: path to save the dot file
+     * @return True if the dump is successful, false otherwise
+     */
+    bool dump_dot(const std::string& path);
+
+    /*
+     * get the name of the graph
+     */
+    const std::string& name() const { return m_name; }
 
     ~Graph() {
         for (auto& pair : m_nodes) {
@@ -336,6 +348,11 @@ private:
      */
     size_t m_executed_node_count = 0;
     std::mutex m_executed_node_count_mtx;
+
+    /*
+     * name of the graph
+     */
+    std::string m_name;
 };
 
 /************* helper ************/

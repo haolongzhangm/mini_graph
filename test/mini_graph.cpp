@@ -961,7 +961,8 @@ TEST(Graph, name_and_dot) {
     Graph g(4, "test_graph");
     ASSERT_EQ(g.name(), "test_graph");
 
-    g.add_task("A", []() {});
+    g.add_task(
+            "A", []() { std::this_thread::sleep_for(std::chrono::milliseconds(200)); });
 
     g.add_task("B", []() {});
 

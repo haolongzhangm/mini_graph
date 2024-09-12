@@ -302,6 +302,13 @@ bool Graph::dump_dot(const std::string& path) {
                 ofs << "  \"" << dep->id() << "\" -> \"" << pair.second->id() << "\""
                     << (is_virtual ? " [style=dashed]" : "") << ";\n";
             }
+
+            //! write time and status to node
+            ofs << "  \"" << pair.second->id() << "\" [label=\"" << pair.second->id()
+                << "\\n"
+                << "status: " << pair.second->status_str() << "\\n"
+                << "exec time: " << pair.second->duration() << "ms"
+                << "\"];\n";
         }
         ofs << "}\n";
         ofs.close();

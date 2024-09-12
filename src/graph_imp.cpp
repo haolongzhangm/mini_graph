@@ -291,8 +291,16 @@ bool Graph::dump_dot(const std::string& path) {
         ofs << "digraph " << m_name << " {\n";
         for (const auto& pair : m_nodes) {
             for (const auto& dep : pair.second->dependencies()) {
-                ofs << "  \"" << dep->id() << "\" -> \"" << pair.second->id()
-                    << "\";\n";
+                //! check dependency is virtual or not, if virtual will use dashed line
+                bool is_virtual = false;
+                for (const auto& v_dep : pair.second->virtual_dependencies()) {
+                    if (v_dep == dep) {
+                        is_virtual = true;
+                        break;
+                    }
+                }
+                ofs << "  \"" << dep->id() << "\" -> \"" << pair.second->id() << "\""
+                    << (is_virtual ? " [style=dashed]" : "") << ";\n";
             }
         }
         ofs << "}\n";

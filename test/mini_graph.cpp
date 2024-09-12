@@ -957,7 +957,7 @@ TEST(Graph, test_worker_parallel) {
     ASSERT_NEAR(ret_time1, 400.0, 20.0);
 }
 
-TEST(Graph, name) {
+TEST(Graph, name_and_dot) {
     Graph g(4, "test_graph");
     ASSERT_EQ(g.name(), "test_graph");
 
@@ -975,11 +975,19 @@ TEST(Graph, name) {
 
     g.add_task("G", []() {});
 
+    g.add_task("H", []() {});
+
+    g.add_task("I", []() {});
+
+    g.add_task("J", []() {});
+
     g.dependency("A", "B");
     g.dependency("B", {"C", "E"});
-    g.dependency("C", "D");
+    g.virtual_dependency("C", "D");
     g.dependency("D", {"E", "F"});
     g.dependency("E", {"F", "G"});
+    g.virtual_dependency("F", {"H", "I"});
+    g.dependency("G", "J");
 
     ASSERT_FALSE(g.dump_dot("sdfsf.dot"));
     g.freezed();

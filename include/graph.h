@@ -38,10 +38,22 @@ public:
     void dependency(Node* node) { m_dependencies.push_back(node); }
 
     /*
+     * Add virtual dependency to the node
+     * @param node: Node to be added as virtual dependency
+     */
+    void virtual_dependency(Node* node) { m_virtual_dependencies.push_back(node); }
+
+    /*
      * Get node dependencies
      * @return Node dependencies
      */
     const std::vector<Node*>& dependencies() const { return m_dependencies; }
+
+    /*
+     * Get node virtual dependencies
+     * @return Node virtual dependencies
+     */
+    const std::vector<Node*>& virtual_dependencies() const { return m_virtual_dependencies; }
 
     /*
      * Check if the node is executed
@@ -130,6 +142,7 @@ private:
     std::string m_id;
     Task m_task;
     std::vector<Node*> m_dependencies;
+    std::vector<Node*> m_virtual_dependencies;
     double m_duration = 0.0;
     double m_start_time = 0.0;
     Status m_status = Status::WAITING;
@@ -205,9 +218,24 @@ public:
             const std::string& who,
             const std::initializer_list<std::string>& depend_whos) {
         dependency(who, depend_whos);
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            Node* from = m_nodes.at(who);
+            for (const auto& depend_who : depend_whos) {
+                Node* to = m_nodes.at(depend_who);
+                from->virtual_dependency(to);
+            }
+        }
     };
     void virtual_dependency(const std::string& who, const std::string& depend_who) {
         dependency(who, depend_who);
+        //! no need do check as check will do int the function: dependency
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            Node* from = m_nodes.at(who);
+            Node* to = m_nodes.at(depend_who);
+            from->virtual_dependency(to);
+        }
     };
 
     /*

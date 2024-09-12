@@ -122,8 +122,9 @@ public:
      * as graph use the thread pool worker and node will config cpu mask and priority
      * so we need use a new thread to execute the task, which will not affect the graph
      * thread pool worker
+     * @param inplace_worker: if use the graph thread pool worker
      */
-    void exec();
+    void exec(bool inplace_worker = false);
 
 private:
     std::string m_id;
@@ -247,6 +248,12 @@ public:
     bool dump_dot(const std::string& path);
 
     /*
+     * config the task exec inplace graph worker
+     * @param is_inplace: if exec inplace
+     */
+    void inplace_worker(bool is_inplace);
+
+    /*
      * get the name of the graph
      */
     const std::string& name() const { return m_name; }
@@ -353,6 +360,11 @@ private:
      * name of the graph
      */
     std::string m_name;
+
+    /*
+     * flag for task exec inplace graph worker
+     */
+    bool m_is_inplace_worker = false;
 };
 
 /************* helper ************/

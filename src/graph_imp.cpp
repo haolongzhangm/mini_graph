@@ -52,9 +52,9 @@ Gtimer::Gtimer() {
     reset();
 }
 
-void Node::exec() {
-    //! TODO: verify the sched delay on weak cpu
-    auto _ = std::thread([this]() {
+void Node::exec(bool inplace_worker) {
+    //! TODO: verify the sched delay on weak cpu if inplace_worker is false
+    auto __ = [&]() {
         config();
 
 #ifdef __linux__
@@ -94,10 +94,15 @@ void Node::exec() {
 #endif
 
         task()();
-    });
+    };
 
-    //! join to block the thread
-    _.join();
+    if (inplace_worker) {
+        __();
+    } else {
+        //! create a new thread to execute the task
+        std::thread _(__);
+        _.join();
+    }
 }
 
 void Node::config() {
@@ -316,6 +321,21 @@ void Graph::prepare_exe() {
     }
 }
 
+void Graph::inplace_worker(bool is_inplace) {
+    graph_log_debug(
+            "node exec will be executed in %s",
+            is_inplace ? "inplace worker" : "new thread");
+    if (is_inplace) {
+        graph_log_warn(
+                "node exec will be executed in inplace worker, all node exec will be "
+                "executed in the same thread as worker, if node do not config cpu_mask "
+                "and priority, then it will use the same cpu_mask and priority as "
+                "worker "
+                "even use pre task config");
+    }
+    m_is_inplace_worker = is_inplace;
+}
+
 double Graph::execute() {
     restore();
     graph_assert(m_is_freezed, "Graph is not freezed! please call freezed() first!");
@@ -380,7 +400,7 @@ double Graph::execute() {
                 graph_log_info("Executing %s", node->id().c_str());
                 node->status(Node::Status::RUNNING);
                 node->start_time(m_timer.get_msecs());
-                node->exec();
+                node->exec(m_is_inplace_worker);
                 node->status(Node::Status::FINISHED);
                 node->duration(t.get_msecs());
                 {

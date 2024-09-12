@@ -764,6 +764,29 @@ TEST(Graph, cpu_mask_and_priority) {
         return;
     }
 #ifdef __linux__
+    Graph g_err_pro(4);
+    g_err_pro.inplace_worker(true);
+    g_err_pro.add_task(
+            "A",
+            []() {
+                printf("A start\n");
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                printf("A end\n");
+            },
+            0xFF, 20);  //! error priority
+
+    g_err_pro.add_task(
+            "B",
+            []() {
+                printf("B start\n");
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                printf("B end\n");
+            },
+            0, 19);
+    g_err_pro.dependency("A", "B");
+    g_err_pro.freezed();
+    g_err_pro.execute();
+
     Graph g(4);
 
     g.add_task(
@@ -773,7 +796,7 @@ TEST(Graph, cpu_mask_and_priority) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 printf("A end\n");
             },
-            0xFF, 20);
+            0xFF, 19);
 
     g.add_task(
             "B",

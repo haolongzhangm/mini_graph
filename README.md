@@ -32,7 +32,7 @@ run gtest with:
 
 ```
 host build: ./build/test/mini_graph_test
-cross build for android: adb push build/test/mini_graph_test /data/local/tmp/mini_graph_test && adb shell /data/local/tmp/mini_graph_test
+cross build for android: adb push build/test/mini_graph_test /data/local/tmp/mini_graph_test && adb shell "cd  /data/local/tmp/ && /data/local/tmp/mini_graph_test"
 ```
 
 ## how to use

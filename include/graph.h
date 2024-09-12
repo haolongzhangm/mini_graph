@@ -53,7 +53,9 @@ public:
      * Get node virtual dependencies
      * @return Node virtual dependencies
      */
-    const std::vector<Node*>& virtual_dependencies() const { return m_virtual_dependencies; }
+    const std::vector<Node*>& virtual_dependencies() const {
+        return m_virtual_dependencies;
+    }
 
     /*
      * Check if the node is executed
@@ -393,6 +395,14 @@ private:
      * flag for task exec inplace graph worker
      */
     bool m_is_inplace_worker = false;
+
+    /*
+     * Get node run line, show time postion, eg, WWWWWRRRRRRFFFFFFF
+     * only used at Node status is FINISHED
+     * @return Node run line
+     * @param zoom_to: zoom to the node
+     */
+    std::string run_line(Node* node, size_t zoom_to) const;
 };
 
 /************* helper ************/

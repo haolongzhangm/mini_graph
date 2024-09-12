@@ -136,6 +136,7 @@ void Node::config() {
         graph_log_warn(
                 "Node: \"%s\" invalid priority: %d, should be in [-20, 19]",
                 id().c_str(), m_priority);
+        m_priority = INT_MAX;
     }
 #endif
 }
@@ -279,7 +280,40 @@ void Graph::freezed() {
             m_timer.get_msecs_reset(), m_nodes.size());
 }
 
+std::string Graph::run_line(Node* node, size_t zoom_to) const {
+    graph_assert(
+            node->status() == Node::Status::FINISHED,
+            "code issue happened!!, Node: %s is not finished!", node->id().c_str());
+    graph_assert(zoom_to > 10, "zoom_to should be greater than 10");
+
+    std::string time_pos;
+    auto start_time = node->start_time();
+    auto duration = node->duration();
+    //! Divide used_time into zoom_to ratio
+    start_time = start_time * zoom_to / m_timer.get_msecs();
+    duration = duration * zoom_to / m_timer.get_msecs();
+    bool have_r = false;
+    for (int i = 0; i < zoom_to; i++) {
+        if (i >= start_time && i < start_time + duration) {
+            time_pos += "R";
+            have_r = true;
+        } else if (i < start_time) {
+            time_pos += "W";
+        } else {
+            time_pos += "F";
+        }
+    }
+    //! mark last is F, as zoom may cause last is not F
+    time_pos[zoom_to - 1] = 'F';
+    if (!have_r) {
+        //! if no R, then mark the index 1 as R, caused by running time is too short
+        time_pos[1] = 'R';
+    }
+    return time_pos;
+}
+
 bool Graph::dump_dot(const std::string& path) {
+    Gtimer timer;
     std::lock_guard<std::mutex> lock(mtx);
     if (!m_is_freezed) {
         graph_log_error(
@@ -303,19 +337,34 @@ bool Graph::dump_dot(const std::string& path) {
                     << (is_virtual ? " [style=dashed]" : "") << ";\n";
             }
 
-            //! write time and status to node
+            //! write time,status,cpu mask and priority to node
+            //! write cpu mask and priority to node
             ofs << "  \"" << pair.second->id() << "\" [label=\"" << pair.second->id()
                 << "\\n"
-                << "status: " << pair.second->status_str() << "\\n"
-                << "exec time: " << pair.second->duration() << "ms"
-                << "\"];\n";
+                << "status: " << pair.second->status_str() << "\\n";
+            auto c_mask = pair.second->cpu_mask();
+            if (c_mask) {
+                ofs << "cpumask: " << std::hex << std::showbase << c_mask
+                    << std::noshowbase << std::dec << "\\n";
+            }
+            auto priority = pair.second->priority();
+            if (priority != INT_MAX) {
+                ofs << "priority: " << priority << "\\n";
+            }
+            ofs << "exec time: " << pair.second->duration() << "ms";
+            //! write start time if node is finished
+            if (pair.second->status() == Node::Status::FINISHED) {
+                ofs << "\\n"
+                    << "I: " << run_line(pair.second, 50);
+            }
+            ofs << "\"];\n";
         }
         ofs << "}\n";
         ofs.close();
-        graph_log_info("Graph is dumped to %s", path.c_str());
         graph_log_info(
-                "You can use `dot -Tpng %s -o %s.png` to generate png file",
-                path.c_str(), path.c_str());
+                "Graph is dumped to %s(Use time: %fms) You can use `dot -Tpng %s -o "
+                "%s.png` to generate png file",
+                path.c_str(), timer.get_msecs(), path.c_str(), path.c_str());
         return true;
     } else {
         graph_log_error(
@@ -473,32 +522,13 @@ double Graph::execute() {
     double used_time = m_timer.get_msecs();
     graph_log_info("Execution completed in %.3f ms", used_time);
 
-    //! show very run time postion when debug
-    //! we will show one hundred time postion, eg, WWWWWRRRRRRFFFFFFF
     if (log_level() == GraphLogLevel::DEBUG) {
         graph_log_debug(
                 "++++++++++++++++++++++Execution time "
                 "details:+++++++++++++++++++");
         for (const auto& pair : m_nodes) {
             Node* node = pair.second;
-            std::string time_pos;
-            auto start_time = node->start_time();
-            auto duration = node->duration();
-            constexpr unsigned int zoom_to = 50;
-            //! Divide used_time into zoom_to ratio
-            start_time = start_time * zoom_to / used_time;
-            duration = duration * zoom_to / used_time;
-            for (int i = 0; i < zoom_to; i++) {
-                if (i >= start_time && i < start_time + duration) {
-                    time_pos += "R";
-                } else if (i < start_time) {
-                    time_pos += "W";
-                } else {
-                    time_pos += "F";
-                }
-            }
-            //! mark last is F, as zoom may cause last is not F
-            time_pos[zoom_to - 1] = 'F';
+            auto time_pos = run_line(node, 50);
             graph_log_debug("%s : \"%s\"", time_pos.c_str(), node->id().c_str());
         }
         graph_log_debug(

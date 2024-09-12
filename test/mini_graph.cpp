@@ -962,13 +962,19 @@ TEST(Graph, name_and_dot) {
     ASSERT_EQ(g.name(), "test_graph");
 
     g.add_task(
-            "A", []() { std::this_thread::sleep_for(std::chrono::milliseconds(200)); });
+            "A", []() { std::this_thread::sleep_for(std::chrono::milliseconds(200)); },
+            0xFF, 19);
 
-    g.add_task("B", []() {});
+    g.add_task(
+            "B", []() { std::this_thread::sleep_for(std::chrono::milliseconds(3)); }, 0,
+            20);
 
-    g.add_task("C", []() {});
+    g.add_task(
+            "C", []() { std::this_thread::sleep_for(std::chrono::milliseconds(10)); },
+            0xF, -19);
 
-    g.add_task("D", []() {});
+    g.add_task(
+            "D", []() {}, 0x1);
 
     g.add_task("E", []() {});
 
@@ -976,9 +982,11 @@ TEST(Graph, name_and_dot) {
 
     g.add_task("G", []() {});
 
-    g.add_task("H", []() {});
+    g.add_task(
+            "H", []() { std::this_thread::sleep_for(std::chrono::milliseconds(40)); });
 
-    g.add_task("I", []() {});
+    g.add_task(
+            "I", []() { std::this_thread::sleep_for(std::chrono::milliseconds(40)); });
 
     g.add_task("J", []() {});
 

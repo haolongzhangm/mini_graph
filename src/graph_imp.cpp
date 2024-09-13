@@ -293,21 +293,23 @@ std::string Graph::run_line(Node* node, size_t zoom_to) const {
     start_time = start_time * zoom_to / m_timer.get_msecs();
     duration = duration * zoom_to / m_timer.get_msecs();
     bool have_r = false;
+    int w_pos = -1;
     for (int i = 0; i < zoom_to; i++) {
         if (i >= start_time && i < start_time + duration) {
             time_pos += "R";
             have_r = true;
         } else if (i < start_time) {
             time_pos += "W";
+            w_pos++;
         } else {
             time_pos += "F";
         }
     }
     //! mark last is F, as zoom may cause last is not F
     time_pos[zoom_to - 1] = 'F';
-    if (!have_r) {
-        //! if no R, then mark the index 1 as R, caused by running time is too short
-        time_pos[1] = 'R';
+    if (!have_r && w_pos >= 0) {
+        //! if no R, then mark the last W as R, caused by running time is too short
+        time_pos[w_pos] = 'R';
     }
     return time_pos;
 }
@@ -352,13 +354,27 @@ bool Graph::dump_dot(const std::string& path) {
                 ofs << "priority: " << priority << "\\n";
             }
             ofs << "exec time: " << pair.second->duration() << "ms";
-            //! write start time if node is finished
-            if (pair.second->status() == Node::Status::FINISHED) {
-                ofs << "\\n"
-                    << "I: " << run_line(pair.second, 50);
-            }
             ofs << "\"];\n";
         }
+        //! write timeing diagram if some node is executed
+        if (m_executed_node_count > 0) {
+            bool verify = false;
+            ofs << "isolated_node [shape=box, style=filled, color=lightblue, "
+                   "label=\"Timing diagram\n";
+            for (const auto& pair : m_nodes) {
+                if (pair.second->status() == Node::Status::FINISHED) {
+                    verify = true;
+                    ofs << "\n"
+                        << run_line(pair.second, 50) << " : " << pair.second->id();
+                }
+            }
+            ofs << "\"];\n";
+            graph_assert(
+                    verify,
+                    "code issue happened!!, no node is executed but "
+                    "m_executed_node_count is not 0");
+        }
+
         ofs << "}\n";
         ofs.close();
         graph_log_info(

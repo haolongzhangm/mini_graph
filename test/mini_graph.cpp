@@ -1006,6 +1006,14 @@ TEST(Graph, name_and_dot) {
     ASSERT_TRUE(g.dump_dot(file_name));
     g.execute();
     ASSERT_TRUE(g.dump_dot(file_name_e));
+
+    //! test a single node with dump dot
+    Graph g2(4, "test_graph2");
+    g2.add_task("A", []() {});
+    g2.freezed();
+    ASSERT_TRUE(g2.dump_dot("test_graph2.dot"));
+    g2.execute();
+    ASSERT_TRUE(g2.dump_dot("test_graph2e.dot"));
 }
 
 int main(int argc, char** argv) {

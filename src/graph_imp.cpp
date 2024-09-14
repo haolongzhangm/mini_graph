@@ -6,6 +6,7 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <vector>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -314,6 +315,61 @@ std::string Graph::run_line(Node* node, size_t zoom_to) const {
     return time_pos;
 }
 
+std::vector<Node*> Graph::longest_path() {
+    graph_assert(m_is_freezed, "Graph is not freezed! please call freezed() first!");
+    graph_assert(m_executed_node_count == m_nodes.size(), "Graph is not executed!");
+
+    std::vector<Node*> path;
+    std::vector<Node*> longest_path;
+    double total_cost = 0;
+    //! every node have duration time, so we can get the longest path by it
+    //! we can use topological sort to get the longest path by DFS
+    std::function<void(Node*, std::vector<Node*>&, std::vector<Node*>&, double&)> dfs =
+            [&](Node* node, std::vector<Node*>& visited, std::vector<Node*>& path,
+                double& cost) {
+                visited.push_back(node);
+                path.push_back(node);
+                cost += node->duration();
+                if (cost > total_cost) {
+                    total_cost = cost;
+                    longest_path = path;
+                }
+                for (Node* neighbor : node->dependencies()) {
+                    if (std::find(visited.begin(), visited.end(), neighbor) ==
+                        visited.end()) {
+                        dfs(neighbor, visited, path, cost);
+                    }
+                }
+                visited.pop_back();
+                path.pop_back();
+                cost -= node->duration();
+            };
+
+    for (const auto& pair : m_nodes) {
+        std::vector<Node*> visited;
+        std::vector<Node*> path;
+        double cost = 0;
+        dfs(pair.second, visited, path, cost);
+    }
+
+    if (0) {
+        graph_log_debug(
+                "++++++++++++++++++++++++++++Longest path in the "
+                "graph:+++++++++++++++++++++++++++++: %.3f ms",
+                total_cost);
+        for (const auto& node : longest_path) {
+            graph_log_debug(
+                    "Node \"%s\" duration: %.3f ms", node->id().c_str(),
+                    node->duration());
+        }
+        graph_log_debug(
+                "++++++++++++++++++++++++++++Longest path in the "
+                "graph:+++++++++++++++++++++++++++++\n");
+    }
+
+    return longest_path;
+}
+
 bool Graph::dump_dot(const std::string& path) {
     Gtimer timer;
     std::lock_guard<std::mutex> lock(mtx);
@@ -324,7 +380,14 @@ bool Graph::dump_dot(const std::string& path) {
     }
     std::ofstream ofs(path);
     if (ofs.is_open()) {
+        //! get long_path info
+        std::vector<Node*> lpath;
+        if (m_executed_node_count == m_nodes.size()) {
+            lpath = longest_path();
+        }
+
         ofs << "digraph " << m_name << " {\n";
+        ofs << "  rankdir=LR;\n";
         for (const auto& pair : m_nodes) {
             for (const auto& dep : pair.second->dependencies()) {
                 //! check dependency is virtual or not, if virtual will use dashed line
@@ -335,8 +398,32 @@ bool Graph::dump_dot(const std::string& path) {
                         break;
                     }
                 }
+
+                bool is_longest_path = false;
+                //! check if the dependency is in the longest path, if in the longest
+                //! path, then use red color
+                //! dep->id() index_a in lpath and pair->second->id() index_b in lpath,
+                //! and index_b - index_a = 1
+                for (int i = 0; i < static_cast<int>(lpath.size()) - 1; i++) {
+                    if (lpath[i] == pair.second && lpath[i + 1] == dep) {
+                        is_longest_path = true;
+                        break;
+                    }
+                }
+                std::string style = "";
+                if (is_virtual || is_longest_path) {
+                    if (is_virtual && is_longest_path) {
+                        style = " [style=dashed, color=red]";
+                    } else if (is_virtual) {
+                        style = " [style=dashed]";
+                    } else if (is_longest_path) {
+                        style = " [color=red]";
+                    } else {
+                        graph_throw("code issue happened!!");
+                    }
+                }
                 ofs << "  \"" << dep->id() << "\" -> \"" << pair.second->id() << "\""
-                    << (is_virtual ? " [style=dashed]" : "") << ";\n";
+                    << style << ";\n";
             }
 
             //! write time,status,cpu mask and priority to node
@@ -367,6 +454,10 @@ bool Graph::dump_dot(const std::string& path) {
                     ofs << "\n"
                         << run_line(pair.second, 50) << " : " << pair.second->id();
                 }
+            }
+            if (m_executed_node_count == m_nodes.size()) {
+                //! write graph cost time
+                ofs << "\n\nTotal cost time: " << m_cost_time << "ms";
             }
             ofs << "\"];\n";
             graph_assert(
@@ -535,8 +626,8 @@ double Graph::execute() {
 
     verify();
 
-    double used_time = m_timer.get_msecs();
-    graph_log_info("Execution completed in %.3f ms", used_time);
+    m_cost_time = m_timer.get_msecs();
+    graph_log_info("Execution completed in %.3f ms", m_cost_time);
 
     if (log_level() == GraphLogLevel::DEBUG) {
         graph_log_debug(
@@ -552,7 +643,7 @@ double Graph::execute() {
                 "details:+++++++++++++++++++");
     }
 
-    return used_time;
+    return m_cost_time;
 }
 
 bool Graph::is_cyclic(

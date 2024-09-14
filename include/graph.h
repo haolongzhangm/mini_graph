@@ -335,6 +335,7 @@ private:
             node->restore();
         }
         m_executed_node_count = 0;
+        m_cost_time = -1.0;
     }
 
     /*
@@ -403,6 +404,15 @@ private:
      * @param zoom_to: zoom to the node
      */
     std::string run_line(Node* node, size_t zoom_to) const;
+
+    /*
+     * every node have duration time, so we can get the longest path by it
+     * @return long path node vector
+     */
+    std::vector<Node*> longest_path();
+
+    /* graph execute cost time */
+    double m_cost_time = 0.0;
 };
 
 /************* helper ************/

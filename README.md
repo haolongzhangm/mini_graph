@@ -97,3 +97,4 @@ more use case, plsease refs to test/mini_graph.cpp
 - [ ] auto search for best performance by random add virtual_dependency for node
 - [ ] power ABI interface from linux `/sys/class/power_supply/battery/` for statistics of power consumption
 - [ ] auto search for power consumption base power ABI interface
+- [ ] linux-base(Android/OHOS/Linux) deadline sched attr export

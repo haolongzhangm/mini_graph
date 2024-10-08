@@ -93,7 +93,22 @@ more use case, plsease refs to test/mini_graph.cpp
     g.execute();
 
 ```
-# TODO LIST
+
+- how to get grap png
+  ```
+  Graph g
+  ...
+  ...
+  g.dump_dot("path_of_grap.dot")
+  
+  after run, run cmd to get png:
+  dot -Tpng path_of_grap.dot -o path_of_grap.png
+  ```
+
+  ![example.png](bfe0adf57bcd93391f3a9756432ead07.png)
+
+TODO LIST
+
 - [ ] auto search for best performance by random add virtual_dependency for node
 - [ ] power ABI interface from linux `/sys/class/power_supply/battery/` for statistics of power consumption
 - [ ] auto search for power consumption base power ABI interface

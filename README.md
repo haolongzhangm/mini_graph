@@ -105,7 +105,7 @@ more use case, plsease refs to test/mini_graph.cpp
   dot -Tpng path_of_grap.dot -o path_of_grap.png
   ```
 
-  ![example.png](bfe0adf57bcd93391f3a9756432ead07.png)
+  ![example.png](example.png)
 
 TODO LIST
 
